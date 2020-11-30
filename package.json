@@ -1,0 +1,10 @@
+{
+  "name": "saga-aws-serverless",
+  "version": "1.0.0",
+  "repository": "git@github.com:amahfouz/saga-aws-serverless.git",
+  "author": "Ahmed Mahfouz <ammahfouz0@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "serverless-step-functions": "^2.29.0"
+  }
+}

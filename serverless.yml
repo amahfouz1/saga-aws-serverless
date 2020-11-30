@@ -1,0 +1,140 @@
+# Welcome to Serverless!
+service: saga-aws-serverless
+
+frameworkVersion: '2'
+
+plugins:
+  - serverless-step-functions
+
+custom:
+  region: ${opt:region, self:provider.region}
+
+# basic configuration and permissions assignment
+provider:
+  name: aws
+  runtime: python3.8
+  region: us-east-1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:DeleteItem
+      Resource:
+        - arn:aws:dynamodb:${self:custom.region}:*:table/order
+        - arn:aws:dynamodb:${self:custom.region}:*:table/payment
+        - arn:aws:dynamodb:${self:custom.region}:*:table/shipment
+
+# CloudFormation resource templates here
+# Creating DynamoDB tables
+resources:
+  Resources:
+    orderTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: order
+        AttributeDefinitions:
+          - AttributeName: order_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: order_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+    paymentTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: payment
+        AttributeDefinitions:
+          - AttributeName: order_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: order_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+    shipmentTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: shipment
+        AttributeDefinitions:
+          - AttributeName: order_id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: order_id
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+#Lambda functions
+functions:
+  create_order:
+    handler: functions/create_order.handler
+  delete_order:
+    handler: functions/delete_order.handler
+  process_payment:
+    handler: functions/process_payment.handler
+  refund_payment:
+    handler: functions/refund_payment.handler
+  process_shipment:
+    handler: functions/process_shipment.handler
+  cancel_shipment:
+    handler: functions/cancel_shipment.handler
+
+# Utilizing serverless-step-functions plugin
+# This is the definiton for our state machine model
+stepFunctions:
+  stateMachines:
+    orderFulfilmentSaga:
+      definition:
+        StartAt: CreateOrder
+        States:
+          CreateOrder:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [create_order, Arn]
+            Next: ProcessPayment
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: DeleteOrder
+                ResultPath: null
+          ProcessPayment:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [process_payment, Arn]
+            Next: ProcessShipment
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: RefundPayment
+                ResultPath: null
+          ProcessShipment:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [process_shipment, Arn]
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: CancelShipment
+                ResultPath: null
+            End: true
+          CancelShipment:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [cancel_shipment, Arn]
+            ResultPath: null
+            Next: RefundPayment
+          RefundPayment:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [refund_payment, Arn]
+            ResultPath: null
+            Next: DeleteOrder
+          DeleteOrder:
+            Type: Task
+            Resource:
+              Fn::GetAtt: [delete_order, Arn]
+            ResultPath: null
+            End: true
